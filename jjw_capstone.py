@@ -176,21 +176,25 @@ num_with_gender_tag = num_with_gender[['Gender','Tough grader', 'Good feedback',
 ,'Inspirational','Pop quizzes!' ,'Accessible','So many papers' ,'Clear grading','Hilarious','Test heavy','Graded by few things','Amazing lectures','Caring','Extra credit'
 ,'Group projects' ,'Lecture heavy']]
 
-def negative_binomial_analysis(data, tag_column):
-    data['Gender_binary'] = data['Gender'].map({'Male': 1, 'Female': 0})
+def normalize_tags(data, tag_columns):
+    normalized_data = data.copy()
+    for tag in tag_columns:
+        normalized_data[tag] = normalized_data[tag] / normalized_data['num_ratings']
+    return normalized_data
+ 
+def mann_whitney_analysis(data, tag_column):
+    male_data = data[data['Gender'] == 'Male'][tag_column]
+    female_data = data[data['Gender'] == 'Female'][tag_column]
     
-    X = sm.add_constant(data['Gender_binary']) 
-    y = data[tag_column]  
-
-    model = sm.GLM(y, X, family=NegativeBinomial()).fit()
-
-    p_value = model.pvalues['Gender_binary']
+    stat, p_value = mannwhitneyu(male_data, female_data, alternative='two-sided')
     
     return {'Tag': tag_column, 'p-value': p_value}
 
+num_with_gender_tag_norm = normalize_tags(num_with_gender_tag, tag_columns)
+
 p_vals = {}
 for t_column in tag_columns:
-    result = negative_binomial_analysis(num_with_gender_tag, t_column)
+    result = mann_whitney_analysis(num_with_gender_tag_norm, t_column)
     p_vals[result['Tag']] = result['p-value']
 
 print(len([v for k,v in p_vals.items() if v  < 0.005]))
@@ -198,27 +202,6 @@ print(len([v for k,v in p_vals.items() if v  < 0.005]))
 pvals_sorted = sorted(p_vals.items(), key = lambda x: x[1])
 print(pvals_sorted[:3])
 print(pvals_sorted[-3:][::-1])
-
-
-def chi_squared_analysis(data, tag_column):
-    data['Tag_Awarded'] = (data[tag_column] > 0).astype(int)
-
-    contingency_table = pd.crosstab(data['Gender'], data['Tag_Awarded'])
-    chi2, p, dof, expected = chi2_contingency(contingency_table)
-    
-    return {'Tag': tag_column, 'p-value': p}
-
-
-p_vals_chi = {}
-for t_column in tag_columns:
-    result = chi_squared_analysis(num_with_gender_tag, t_column)
-    p_vals_chi[result['Tag']] = result['p-value']
-
-print(len([v for k,v in p_vals_chi.items() if v  < 0.005]))
-
-pvals_chi_sorted = sorted(p_vals_chi.items(), key = lambda x: x[1])
-print(pvals_chi_sorted[:3])
-print(pvals_chi_sorted[-3:][::-1])
 
 
 ## ------------------------------------------------------------------------------------------------------------------------------ 
