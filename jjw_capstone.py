@@ -166,3 +166,105 @@ def plot_sampling_distribution(bootstrap_results, observed_effect, confidence_in
 
 plot_sampling_distribution(mean_bootstrap, mean_effect, mean_ci, title="Mean Difference (Cohen's d)")
 plot_sampling_distribution(variance_bootstrap, variance_effect, variance_ci, title="Variance Difference Effect Size")
+
+
+
+## ------------------------------------------------------------------------------------------------------------------------------ 
+# Q4 
+
+num_with_gender_tag = num_with_gender[['Gender','Tough grader', 'Good feedback', 'Respected', 'Lots to read', 'Participation matters', 'Don’t skip class or you will not pass', 'Lots of homework'
+,'Inspirational','Pop quizzes!' ,'Accessible','So many papers' ,'Clear grading','Hilarious','Test heavy','Graded by few things','Amazing lectures','Caring','Extra credit'
+,'Group projects' ,'Lecture heavy']]
+
+def negative_binomial_analysis(data, tag_column):
+    data['Gender_binary'] = data['Gender'].map({'Male': 1, 'Female': 0})
+    
+    X = sm.add_constant(data['Gender_binary']) 
+    y = data[tag_column]  
+
+    model = sm.GLM(y, X, family=NegativeBinomial()).fit()
+
+    p_value = model.pvalues['Gender_binary']
+    
+    return {'Tag': tag_column, 'p-value': p_value}
+
+p_vals = {}
+for t_column in tag_columns:
+    result = negative_binomial_analysis(num_with_gender_tag, t_column)
+    p_vals[result['Tag']] = result['p-value']
+
+print(len([v for k,v in p_vals.items() if v  < 0.005]))
+
+pvals_sorted = sorted(p_vals.items(), key = lambda x: x[1])
+print(pvals_sorted[:3])
+print(pvals_sorted[-3:][::-1])
+
+
+def chi_squared_analysis(data, tag_column):
+    data['Tag_Awarded'] = (data[tag_column] > 0).astype(int)
+
+    contingency_table = pd.crosstab(data['Gender'], data['Tag_Awarded'])
+    chi2, p, dof, expected = chi2_contingency(contingency_table)
+    
+    return {'Tag': tag_column, 'p-value': p}
+
+
+p_vals_chi = {}
+for t_column in tag_columns:
+    result = chi_squared_analysis(num_with_gender_tag, t_column)
+    p_vals_chi[result['Tag']] = result['p-value']
+
+print(len([v for k,v in p_vals_chi.items() if v  < 0.005]))
+
+pvals_chi_sorted = sorted(p_vals_chi.items(), key = lambda x: x[1])
+print(pvals_chi_sorted[:3])
+print(pvals_chi_sorted[-3:][::-1])
+
+
+## ------------------------------------------------------------------------------------------------------------------------------ 
+# Q5
+
+female_diff = num_with_gender[num_with_gender['Gender'] == 'Female']['average_difficulty']
+male_diff = num_with_gender[num_with_gender['Gender'] == 'Male']['average_difficulty']
+
+# T-test 
+t_result = stats.ttest_ind(female_diff, male_diff, equal_var=False, alternative='two-sided')
+
+# Mann-Whitney 
+mann_whitney_result = mannwhitneyu(female_diff, male_diff, alternative='two-sided')
+
+print(female_diff.mean(), male_diff.mean())
+print(t_result)
+print(mann_whitney_result)
+
+
+
+## ------------------------------------------------------------------------------------------------------------------------------ 
+# Q6
+
+# Q6 
+
+mean_effect, mean_ci, mean_bootstrap = bootstrap_effect_size(male_diff, female_diff, metric="mean", num_resamples=10000)
+print("Mean Difference (Cohen's d):")
+print(f"Effect Size: {mean_effect:.3f}")
+print(f"95% CI: {mean_ci}")
+
+
+# Plot confidence intervals 
+def plot_sampling_distribution(bootstrap_results, observed_effect, confidence_interval, title="Effect Size Sampling Distribution"):
+    ci_lower, ci_upper = confidence_interval
+
+    plt.figure(figsize=(8, 5))
+    plt.hist(bootstrap_results, bins=30, density=True, alpha=0.7, color='orange', label='Bootstrap Distribution')
+    plt.axvline(observed_effect, color='red', linestyle='--', linewidth=2, label='Observed Effect')
+    plt.axvline(ci_lower, color='green', linestyle='-', linewidth=1.5, label='95% CI Lower Bound')
+    plt.axvline(ci_upper, color='green', linestyle='-', linewidth=1.5, label='95% CI Upper Bound')
+    plt.title(title)
+    plt.xlabel("Effect Size")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+plot_sampling_distribution(mean_bootstrap, mean_effect, mean_ci, title="Mean Difference (Cohen's d)")
+
+
