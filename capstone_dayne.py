@@ -140,16 +140,6 @@ def plot_sampling_distribution(bootstrap_results, observed_effect, conf_interval
     plt.show()
 
 
-def cohens_d_standard_error(sample1, sample2):
-    n1, n2 = len(sample1), len(sample2)
-    term1 = (n1 + n2) / (n1 * n2)
-
-    d = cohens_d(sample1, sample2)
-    term2 = d**2 / (2 * (n1 + n2))
-
-    return np.sqrt(term1 + term2)
-
-
 def build_regression_model(X, y, val_size=0.2, test_size=0.2):
     X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=test_size, random_state=RANDOM_SEED)
     X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=val_size, random_state=RANDOM_SEED)
@@ -223,13 +213,6 @@ def q3(male_rating, female_rating):
     effect_size = mean_diff_effect_size(male_rating, female_rating)
     conf_interval, _, bs_results = bootstrap(male_rating, female_rating, stat_fn=mean_diff_effect_size)
     print(f"Q3. Effect size of gender bias in average ratings: {effect_size} with confidence interval {float(conf_interval[0]), float(conf_interval[1])}")
-
-    cohens_d_se = cohens_d_standard_error(male_rating, female_rating)
-    conf_interval_cmpr = (effect_size - 1.96 * cohens_d_se, effect_size + 1.96 * cohens_d_se)
-
-    plot_sampling_distribution(bs_results, effect_size, conf_interval, title="bootstrap result of effect size (mean difference) in average ratings")
-
-    print("Q3. sanity check for cohen's d confidence interval (using cohen's d standard error formula'): ", conf_interval_cmpr)
 
     effect_size = var_diff_effect_size(male_rating, female_rating)
     conf_interval, _, bs_results = bootstrap(male_rating, female_rating, stat_fn=var_diff_effect_size)
