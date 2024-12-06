@@ -2,11 +2,14 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import stats
-from sklearn.model_selection import train_test_split
-from sklearn.linear_model import Lasso
-from sklearn.metrics import root_mean_squared_error, r2_score
-from sklearn.preprocessing import StandardScaler
 
+from sklearn.model_selection import train_test_split
+from sklearn.linear_model import LogisticRegression, Ridge, Lasso, LinearRegression
+from sklearn.metrics import classification_report, confusion_matrix, f1_score, precision_score, recall_score, roc_auc_score, roc_curve, root_mean_squared_error, r2_score, accuracy_score
+from sklearn.preprocessing import StandardScaler
+from typing import Union
+
+from sklearn.svm import SVC
 
 RANDOM_SEED = 18038726
 
@@ -55,19 +58,24 @@ def load_data(num_csv="rmpCapstoneNum.csv", qual_csv="rmpCapstoneQual.csv", tag_
     return rmp_num_df, rmp_qual_df, rmp_tag_df, full_dat
 
 
-def preprocess(full_data, *, thres=4):
-    gender_grouped_df = full_data[full_data["is_male"] != full_data["is_female"]]
+def preprocess(full_data, num_cols, qual_cols, tag_cols, *, thres=4, normalize_tag="tag_sum") -> pd.DataFrame:
+    df = full_data[full_data["is_male"] != full_data["is_female"]]
+    df = df[df["average_ratings"].notnull()]
+    df_thres = df[df["num_ratings"] >= thres]
 
-    male_df = gender_grouped_df[gender_grouped_df["is_male"] == 1]
-    female_df = gender_grouped_df[gender_grouped_df["is_female"] == 1]
+    if normalize_tag is None:
+        return df_thres
 
-    rating_null_dropped_df = gender_grouped_df[gender_grouped_df['average_ratings'].notnull()]
-    df_thres = rating_null_dropped_df[rating_null_dropped_df["num_ratings"] >= thres]
+    df_thres[tag_cols] = df_thres[tag_cols].astype("float64")
 
-    male_df_thres = df_thres[df_thres["is_male"] == 1]
-    female_df_thres = df_thres[df_thres["is_female"] == 1]
+    if normalize_tag == "tag_sum":
+        denom = df_thres[tag_cols].sum(axis=1)
+    elif normalize_tag == "num_ratings":
+        denom = full_data["num_ratings"]
 
-    return gender_grouped_df, (male_df, female_df), df_thres, (male_df_thres, female_df_thres)
+    df_thres.loc[:, tag_cols] = df_thres[tag_cols].div(denom, axis=0)
+
+    return df_thres
 
 
 def var_diff(sample1, sample2, axis=0):
@@ -140,36 +148,36 @@ def plot_sampling_distribution(bootstrap_results, observed_effect, conf_interval
     plt.show()
 
 
-def build_regression_model(X, y, val_size=0.2, test_size=0.2):
-    X_train_val, X_test, y_train_val, y_test = train_test_split(X, y, test_size=test_size, random_state=RANDOM_SEED)
-    X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=val_size, random_state=RANDOM_SEED)
+def build_regression_model(X, y, test_size=0.2, with_feature_scaling=True):
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=RANDOM_SEED)
+    model = LinearRegression()
 
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_val_scaled = scaler.transform(X_val)
-    X_test_scaled = scaler.transform(X_test)
+    if with_feature_scaling:
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
 
-    rmse_val_list = []
-    models = []
-    alphas = np.arange(0.01, 1, 0.01)
-    for alpha in alphas:
-        model = Lasso(alpha)
         model.fit(X_train_scaled, y_train)
+        y_pred = model.predict(X_test_scaled)
+    else:
+        model.fit(X_train, y_train)
+        y_pred = model.predict(X_test)
 
-        y_pred_val = model.predict(X_val_scaled)
-        rmse = root_mean_squared_error(y_val, y_pred_val)
+    rmse = root_mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
-        rmse_val_list.append(rmse)
-        models.append(model)
+    return (model, rmse, r2, y_pred, y_test, scaler) if with_feature_scaling else (model, rmse, r2, y_pred, y_test)
 
-    min_i = np.argmin(np.array(rmse_val_list))
-    best_model = models[min_i]
 
-    y_pred_test = best_model.predict(X_test_scaled)
-    rmse = root_mean_squared_error(y_test, y_pred_test)
-    r2 = r2_score(y_test, y_pred_test)
+def plot_regression_scatter(y_hat, y_true, target_name):
+    fig, ax = plt.subplots()
 
-    return best_model, rmse, r2, scaler
+    ax.scatter(x=y_hat, y=y_true, c="purple")
+    ax.set_title(f"Scatterplot of {target_name} vs Predicted {target_name} (y_hat)")
+    ax.set_xlabel(f"Predicted {target_name} (y_hat)")
+    ax.set_ylabel(f"Actual {target_name} (y)")
+
+    plt.show()
 
 
 def sort_regress_model_coefs(coefs, feature_names):
@@ -178,22 +186,60 @@ def sort_regress_model_coefs(coefs, feature_names):
     return sorted_coefs
 
 
-def impute_prop_take_again(num_df: pd.DataFrame):
-    feature_df = num_df.drop(columns=["is_female", "prop_take_again"])  # handle dummpy variable trap (is_male, is_femlae)
-    target_df = num_df["prop_take_again"]
+def build_classification_model(X, y, test_size=0.2, threshold=0.5, model_type="logistic"):
+    # default thresholds sbould be 0.5 for "logistic regression" and 0.0 for "svm"
 
-    X_train = feature_df[target_df.notnull()].to_numpy()
-    y_train = target_df[target_df.notnull()].to_numpy()
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=test_size, random_state=RANDOM_SEED)
 
-    model, _, _, feature_scaler = build_regression_model(X_train, y_train, val_size=0.2, test_size=0.2)
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
 
-    X_to_impute = feature_df[target_df.isna()].to_numpy()
+    if model_type == "logistic":
+        model = LogisticRegression()
+        model.fit(X_train_scaled, y_train)
 
-    y_pred = model.predict(feature_scaler.transform(X_to_impute))
-    imputed_num_df = num_df.copy(deep=True)
-    imputed_num_df.loc[target_df.isnull(), "prop_take_again"] = y_pred
+        y_prob = model.predict_proba(X_test_scaled)[:,1]
+    elif model_type == "svm":
+        model = SVC(kernel='linear', random_state=RANDOM_SEED)
+        model.fit(X_train_scaled, y_train)
 
-    return imputed_num_df
+        y_prob = model.decision_function(X_test_scaled)
+
+    model.fit(X_train_scaled, y_train)
+
+    # y_prob = model.predict_proba(X_test_scaled)[:,1]
+    # y_pred = model.predict(X_test_scaled)
+
+    y_pred = (y_prob >= threshold).astype(int)
+
+    fpr, tpr, thres = roc_curve(y_test, y_prob)
+
+    auc_score = roc_auc_score(y_test, y_prob)
+    acc = accuracy_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    recall = recall_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+
+    conf_matrix = confusion_matrix(y_test, y_pred)
+
+
+    return model, (auc_score, acc, precision, recall, f1), conf_matrix, (fpr, tpr, thres), (y_test, y_pred)
+
+
+def plot_roc_curve(fpr, tpr, auc_score):
+    # Calculate the ROC curve and AUC
+
+    # Plot the ROC curve
+    plt.figure(figsize=(8, 6))
+    plt.plot(fpr, tpr, color='blue', lw=2, label=f'ROC curve (AUC = {auc_score:.2f})')
+    plt.plot([0, 1], [0, 1], color='grey', lw=1, linestyle='--', label='Random Guess')
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic (ROC) Curve')
+    plt.legend(loc='lower right')
+    plt.grid(alpha=0.5)
+    plt.show()
 
 
 def q1(male_rating, female_rating):
@@ -206,48 +252,59 @@ def q1(male_rating, female_rating):
 
 def q2(male_rating, female_rating):
     rslt = stats.permutation_test((male_rating, female_rating), var_diff, n_resamples=1e+4, vectorized=True)
-    print("Q2. p-value: ", rslt.pvalue, "variance ratio: ", rslt.statistic)
+    print("Q2. p-value: ", rslt.pvalue, "variance difference: ", rslt.statistic)
+
+    plt.hist(rslt.null_distribution, bins=50, density=True, label='Null Distribution')
+    plt.axvline(rslt.statistic, color='red', linestyle='dashed', linewidth=2, label='Observed Statistic')
+    plt.title("Permutation Test Null Distribution")
+    plt.xlabel("Test Statistic")
+    plt.ylabel("Density")
+    plt.legend()
+    plt.show()
+
 
 
 def q3(male_rating, female_rating):
     effect_size = mean_diff_effect_size(male_rating, female_rating)
     conf_interval, _, bs_results = bootstrap(male_rating, female_rating, stat_fn=mean_diff_effect_size)
+    plot_sampling_distribution(bs_results, effect_size, conf_interval, title="bootstrap result of mean difference average ratings")
     print(f"Q3. Effect size of gender bias in average ratings: {effect_size} with confidence interval {float(conf_interval[0]), float(conf_interval[1])}")
 
     effect_size = var_diff_effect_size(male_rating, female_rating)
     conf_interval, _, bs_results = bootstrap(male_rating, female_rating, stat_fn=var_diff_effect_size)
 
-    plot_sampling_distribution(bs_results, effect_size, conf_interval, title="bootstrap result of effect size (variance difference) average ratings")
-
+    plot_sampling_distribution(bs_results, effect_size, conf_interval, title="bootstrap result of variance difference in average ratings")
     print(f"Q3. Effect size of gender bias in spread of average ratings (variance difference): {effect_size} with confidence interval {float(conf_interval[0]), float(conf_interval[1])}")
+
 
 
 def q4(male_tag_df, female_tag_df):
     statistics = []
     p_vals = []
 
-    for tag in male_tag_df.columns:
-        male_df = male_tag_df[tag]
-        female_df = female_tag_df[tag]
+    tag_cols = male_tag_df.columns
 
-        statistic, p_val = stats.mannwhitneyu(male_df, female_df)
-        statistics.append(statistic)
-        p_vals.append(p_val)
+    def perm_stat_fn(sample1, sample2, axis):
+        return np.median(sample1, axis=axis) - np.median(sample2, axis=axis)
+
+    for tag in tag_cols:
+        male_tag = male_tag_df[tag]
+        female_tag = female_tag_df[tag]
+
+        rslt = stats.permutation_test((male_tag, female_tag), statistic=perm_stat_fn, n_resamples=1000, vectorized=True)
+
+        statistics.append(rslt.statistic)
+        p_vals.append(rslt.pvalue)
+
+    p_vals_labeled = sorted(zip(p_vals, tag_cols), key=lambda e: e[0])
 
     top_k = 3
-    p_vals_np = np.array(p_vals)
-    sorted_col_indicies = np.argsort(p_vals_np)
-    min_indices = sorted_col_indicies[:top_k]
-    max_indicies = sorted_col_indicies[-top_k:len(p_vals)]
+    alpha_level = 0.005
+    sig_cnt = len([val for val in p_vals if val < alpha_level])
 
-    biased_cols = [male_tag_df.columns[min_indices[i]] for i in range(top_k)]
-    unbiased_cols = [male_tag_df.columns[max_indicies[i]] for i in range(top_k)]
-
-    min_p_vals = p_vals_np[min_indices]
-    max_p_vals = p_vals_np[max_indicies]
-
-    print(f"Q4. most gendered tags and corresponding p-values: {biased_cols}, {min_p_vals}")
-    print(f"Q4. least gendered tags and corresponding p-values: {unbiased_cols}, {max_p_vals}")
+    print(f"Q4. The number of significant tags: {sig_cnt}")
+    print(f"Q4. most gendered tags and corresponding p-values: {p_vals_labeled[:top_k+1]}")
+    print(f"Q4. least gendered tags and corresponding p-values: {p_vals_labeled[::-1][:top_k+1]}")
 
 
 def q5(male_rating, female_rating):
@@ -267,7 +324,7 @@ def q6(male_difficulty, female_difficulty):
 
 
 def q7(features: pd.DataFrame, target: pd.DataFrame):
-    model, rmse, r2, _ = build_regression_model(features.to_numpy(), target.to_numpy())
+    model, rmse, r2, _, _, _ = build_regression_model(features.to_numpy(), target.to_numpy())
     sorted_coefs = sort_regress_model_coefs(model.coef_, features.columns)
 
     print(f"Q7. model: {model}, RMSE: {rmse}, R^2: {r2}")
@@ -277,7 +334,7 @@ def q7(features: pd.DataFrame, target: pd.DataFrame):
 
 
 def q8(features: pd.DataFrame, target: pd.DataFrame):
-    model, rmse, r2, _ = build_regression_model(features.to_numpy(), target.to_numpy())
+    model, rmse, r2, _, _ = build_regression_model(features.to_numpy(), target.to_numpy(), with_feature_scaling=False)
     sorted_coefs = sort_regress_model_coefs(model.coef_, features.columns)
 
     print(f"Q8. model: {model}, RMSE: {rmse}, R^2: {r2}")
@@ -288,7 +345,7 @@ def q8(features: pd.DataFrame, target: pd.DataFrame):
 
 
 def q9(features: pd.DataFrame, target: pd.DataFrame):
-    model, rmse, r2, _ = build_regression_model(features.to_numpy(), target.to_numpy())
+    model, rmse, r2, _, _ = build_regression_model(features.to_numpy(), target.to_numpy(), with_feature_scaling=False)
     sorted_coefs = sort_regress_model_coefs(model.coef_, features.columns)
 
     print(f"Q9. model: {model}, RMSE: {rmse}, R^2: {r2}")
@@ -297,8 +354,18 @@ def q9(features: pd.DataFrame, target: pd.DataFrame):
         print(coef)
 
 
-def q10():
-    pass
+def q10(X, y):
+    classifier, (auc_score, acc, precision, recall, f1), conf_matrix, (fpr, tpr, thres), (y_test, y_pred) = build_classification_model(X, y, test_size=0.2, threshold=0.3, model_type="logistic")
+
+    plot_roc_curve(fpr, tpr, auc_score)
+
+    print("AUC Score:", auc_score)
+    print("Accuracy:", acc)
+    print("Precision:", precision)
+    print("Recall:", recall)
+    print("F1 Score:", f1)
+    print("Confusion Matrix:\n", conf_matrix)
+    print("\nClassification Report:\n", classification_report(y_test, y_pred))
 
 
 def extra():
@@ -308,37 +375,51 @@ def extra():
 def main():
     np.random.seed(RANDOM_SEED)
     num_df, qual_df, tag_df, full_data = load_data("rmpCapstoneNum.csv", "rmpCapstoneQual.csv", "rmpCapstoneTags.csv")
-    processed_df, (male_df, female_df), df_thres, (male_df_thres, female_df_thres) = preprocess(full_data, thres=4)
+    num_cols, qual_cols, tag_cols = num_df.columns, qual_df.columns, tag_df.columns
+    processed_df = preprocess(full_data, num_cols, qual_cols, tag_cols, thres=4, normalize_tag="num_ratings")
 
-    male_rating_df = male_df_thres["average_ratings"]
-    female_rating_df = female_df_thres["average_ratings"]
+    male_df = processed_df[processed_df["is_male"] == 1]
+    female_df = processed_df[processed_df["is_female"] == 1]
 
-    male_difficulty_df = male_df_thres["average_difficulty"]
-    female_difficulty_df = female_df_thres["average_difficulty"]
+    male_rating = male_df["average_ratings"]
+    female_rating = female_df["average_ratings"]
 
-    q1(male_rating_df, female_rating_df)
-    q2(male_rating_df, female_rating_df)
-    q3(male_rating_df, female_rating_df)
-    q4(male_df[tag_df.columns], female_df[tag_df.columns])
-    q5(male_difficulty_df, female_difficulty_df)
-    q6(male_difficulty_df, female_difficulty_df)
+    # q1(male_rating, female_rating)
+    # q2(male_rating, female_rating)
+    # q3(male_rating, female_rating)
 
-    num_df_thres = df_thres[num_df.columns]
-    imputed_num_df_thres = impute_prop_take_again(num_df_thres)
+    # q4(male_df[tag_cols], female_df[tag_cols])
 
-    imputed_num_df_thres.drop(columns=["is_female"], inplace=True)
+    male_difficulty = male_df["average_difficulty"]
+    female_difficulty = female_df["average_difficulty"]
 
-    features = imputed_num_df_thres.drop(columns=["average_ratings"])
-    target = imputed_num_df_thres["average_ratings"]
-    q7(features, target)
+    # q5(male_difficulty, female_difficulty)
+    # q6(male_difficulty, female_difficulty)
 
-    features = df_thres[tag_df.columns]
-    q8(features, target)
+    take_again_na_dropped_df = processed_df.dropna()
 
-    target = df_thres["average_difficulty"]
-    q9(features, target)
-    q10()
-    extra()
+    na_dropped_num_df = take_again_na_dropped_df[num_cols]
+    na_dropped_num_df = na_dropped_num_df.drop(columns="is_female")   # handle dummy variable trap
+
+    numerical_features = na_dropped_num_df.drop(columns=["average_ratings"])
+    target = take_again_na_dropped_df["average_ratings"]
+    # q7(numerical_features, target)
+
+    tag_features = take_again_na_dropped_df[tag_cols]
+
+    # q8(tag_features, target)
+
+    tag_features = processed_df[tag_cols]
+    target = processed_df["average_difficulty"]
+    # q9(tag_features, target)
+
+    num_tag_df = take_again_na_dropped_df[list(num_cols) + list(tag_cols)]
+
+    features = num_tag_df.drop(columns=["is_received_pepper", "is_female"])
+    target = num_tag_df["is_received_pepper"]
+    q10(features, target)
+
+    # extra()
 
 
 if __name__ == "__main__":
