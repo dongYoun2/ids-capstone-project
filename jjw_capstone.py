@@ -174,7 +174,7 @@ plot_sampling_distribution(variance_bootstrap, variance_effect, variance_ci, tit
 
 num_with_gender_tag = num_with_gender[['Gender','Tough grader', 'Good feedback', 'Respected', 'Lots to read', 'Participation matters', 'Don’t skip class or you will not pass', 'Lots of homework'
 ,'Inspirational','Pop quizzes!' ,'Accessible','So many papers' ,'Clear grading','Hilarious','Test heavy','Graded by few things','Amazing lectures','Caring','Extra credit'
-,'Group projects' ,'Lecture heavy']]
+,'Group projects' ,'Lecture heavy', 'num_ratings']]
 
 def normalize_tags(data, tag_columns):
     normalized_data = data.copy()
