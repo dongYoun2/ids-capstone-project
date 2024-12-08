@@ -5,6 +5,13 @@ from scipy import stats
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import permutation_test,mannwhitneyu
+from sklearn.linear_model import LinearRegression, LogisticRegression
+from sklearn.metrics import r2_score, mean_squared_error
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, classification_report, roc_curve, confusion_matrix, f1_score, classification_report, precision_score, recall_score, accuracy_score
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.ensemble import RandomForestClassifier
 
 # Random seed
 np.random.seed(18038726)
