@@ -607,7 +607,7 @@ def extra_credit(samples: Sequence[np.ndarray]):
     """
     test_stat, p_val = stats.f_oneway(*samples)
 
-    print(f"Extra Credit: p-value: ", p_val, "test statistic: ", test_stat)
+    print("Extra Credit: p-value: ", p_val, "test statistic: ", test_stat)
 
 
 def main():
@@ -626,9 +626,9 @@ def main():
     male_rating = male_df["average_ratings"]
     female_rating = female_df["average_ratings"]
 
-    q1(male_rating.to_numpy(), female_rating.to_numpy())
-    q2(male_rating. to_numpy(), female_rating.to_numpy())
-    q3(male_rating.to_numpy(), female_rating.to_numpy())
+    q1(female_rating.to_numpy(), male_rating.to_numpy())
+    q2(female_rating.to_numpy(), male_rating.to_numpy())
+    q3(female_rating.to_numpy(), male_rating.to_numpy())
 
     # Analyze gender bias in tags
     q4(male_df[tag_cols], female_df[tag_cols], tag_cols)
@@ -637,8 +637,8 @@ def main():
     male_difficulty = male_df["average_difficulty"]
     female_difficulty = female_df["average_difficulty"]
 
-    q5(male_difficulty.to_numpy(), female_difficulty.to_numpy())
-    q6(male_difficulty.to_numpy(), female_difficulty.to_numpy())
+    q5(female_difficulty.to_numpy(), male_difficulty.to_numpy())
+    q6(female_difficulty.to_numpy(), male_difficulty.to_numpy())
 
     # Prepare data for regression analysis
     take_again_na_dropped_df = processed_df.dropna()
