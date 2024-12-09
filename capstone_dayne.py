@@ -397,15 +397,12 @@ def plot_roc_curve(fpr: np.ndarray, tpr: np.ndarray, auc_score: float, title="RO
 
 def q1(male_rating: np.ndarray, female_rating: np.ndarray):
     """
-    Performs statistical tests (Mann-Whitney U and Welch's t-test) to compare average ratings of male and female professors.
+    Performs statistical test (Welch's t-test) to compare average ratings of male and female professors.
 
     Args:
         male_rating (np.ndarray): Average ratings of male professors.
         female_rating (np.ndarray): Average ratings of female professors.
     """
-    u_stat, p_val = stats.mannwhitneyu(male_rating, female_rating)
-    print("Q1. p-value: ", p_val, "U statistic: ", u_stat)
-
     # Welch's t-test (for unequal variances)
     t_stat, p_val = stats.ttest_ind(male_rating, female_rating, equal_var=False)
     print("Q1. p-value: ", p_val, "t-statistic: ", t_stat)
@@ -496,7 +493,7 @@ def q4(male_tag_df: pd.DataFrame, female_tag_df: pd.DataFrame, tag_columns: Sequ
 
 def q5(male_difficulty: np.ndarray, female_difficulty: np.ndarray):
     """
-    Repeats statistical tests (Welch's t-test and Mann-Whitney U test) to assess gender bias in average difficulty.
+    Performs statistical test (Welch's t-test) to assess gender bias in average difficulty.
 
     Args:
         male_difficulty (np.ndarray): Average difficulty for male professors.
@@ -505,9 +502,6 @@ def q5(male_difficulty: np.ndarray, female_difficulty: np.ndarray):
     # Welch's t-test
     t_stat, p_val = stats.ttest_ind(male_difficulty, female_difficulty, equal_var=False)
     print("Q5. p-value: ", p_val, "t-statistic: ", t_stat)
-
-    u_stat, p_val = stats.mannwhitneyu(male_difficulty, female_difficulty)
-    print("Q5. p-value: ", p_val, "U statistic: ", u_stat)
 
 
 def q6(male_difficulty: np.ndarray, female_difficulty: np.ndarray):
@@ -605,7 +599,13 @@ def q10(X: np.ndarray, y: np.ndarray):
 
 
 def extra_credit(samples: Sequence[np.ndarray]):
-    test_stat, p_val = stats.kruskal(*samples)
+    """
+    Performs statistical test (ANOVA) to examine difference in average difficulty ratings across states.
+
+    Args:
+        samples (Sequence[np.ndarray]): List of average difficulty of each state
+    """
+    test_stat, p_val = stats.f_oneway(*samples)
 
     print(f"Extra Credit: p-value: ", p_val, "test statistic: ", test_stat)
 
@@ -664,16 +664,16 @@ def main():
     target = num_tag_df["is_received_pepper"]
     q10(features.to_numpy(), target.to_numpy())
 
-    # Extra credit: Kruskal-Wallis test for state-wise ratings
-    min_sample_size_per_state = 30
+    # Extra credit: ANOVA for state-wise average difficulty ratings
+    state_num = 5
     state_df = processed_df["State"]
-    state_value_cnts = state_df.value_counts()
-    filtered_states = state_value_cnts[state_value_cnts > min_sample_size_per_state].index
+    state_cnt = state_df.value_counts(ascending=False).iloc[:state_num]
+    states = state_cnt.index
 
     samples = []
-    for state in filtered_states:
+    for state in states:
         state_df = processed_df[processed_df["State"] == state]
-        state_rating_df = state_df["average_ratings"]
+        state_rating_df = state_df["average_difficulty"]
         samples.append(state_rating_df.to_numpy())
 
     extra_credit(samples)
